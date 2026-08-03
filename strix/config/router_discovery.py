@@ -54,19 +54,62 @@ def fetch_router_models(
     return []
 
 
-def select_best_model(models: list[str]) -> str | None:
-    """Select the best default model from a list of discovered model IDs based on capability priority."""
+def check_model_health(
+    api_base: str, api_key: str | None, model_id: str, timeout: float = 2.5
+) -> bool:
+    """Send a quick 1-token test request to verify if the model is responsive and has available quota."""
+    if not api_base:
+        return True
+    try:
+        clean_model = model_id.removeprefix("openai/")
+        url = f"{api_base.rstrip('/')}/chat/completions"
+        if not api_base.rstrip("/").endswith("/v1") and "/v1" not in url:
+            url = f"{api_base.rstrip('/')}/v1/chat/completions"
+        headers = {"Content-Type": "application/json"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+        payload = {
+            "model": clean_model,
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 1,
+        }
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers=headers,
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.status == 200
+    except urllib.error.HTTPError as e:
+        if e.code in (429, 403, 503):
+            logger.warning(
+                "Model '%s' failed health check (HTTP %d - Quota Exhausted/Throttled)",
+                model_id,
+                e.code,
+            )
+            return False
+        return True
+    except Exception as exc:
+        logger.warning("Model '%s' health check timeout/error: %s", model_id, exc)
+        return False
+
+
+def select_best_model(
+    models: list[str], api_base: str | None = None, api_key: str | None = None
+) -> str | None:
+    """Select the best healthy default model from a list of discovered model IDs based on capability priority."""
     if not models:
         return None
 
-    # Priority rules for model selection (prefer active unthrottled ag/ models)
+    # Priority rules for model selection (prefer active unthrottled models)
     priority_keywords = [
         "gemini-pro",
+        "gpt-4.1",
+        "gpt-4o",
         "gemini-3",
         "claude-opus",
         "claude-sonnet",
-        "gpt-4o",
-        "gpt-4.1",
         "gpt-5",
         "claude-haiku",
         "gpt-4",
@@ -74,7 +117,7 @@ def select_best_model(models: list[str]) -> str | None:
         "qwen",
     ]
 
-    # Skip mini/micro/dated-utility models in first choice if larger clean models are available
+    candidates: list[str] = []
     for kw in priority_keywords:
         for model in models:
             model_lower = model.lower()
@@ -83,20 +126,25 @@ def select_best_model(models: list[str]) -> str | None:
                 and "mini" not in model_lower
                 and "micro" not in model_lower
                 and "-2024" not in model_lower
+                and model not in candidates
             ):
-                return model
+                candidates.append(model)
 
-    # Second pass: allow mini models
-    for kw in priority_keywords:
-        for model in models:
-            if kw in model.lower():
-                return model
+    for m in models:
+        if m not in candidates:
+            candidates.append(m)
 
-    return models[0]
+    if api_base:
+        for candidate in candidates:
+            if check_model_health(api_base, api_key, candidate):
+                return candidate
+        logger.warning("All candidate models failed health check, using first candidate as fallback.")
+
+    return candidates[0] if candidates else models[0]
 
 
 def auto_discover_and_select_model(settings: Settings) -> str | None:
-    """If STRIX_LLM is not set, auto-discover models from LLM_API_BASE and select the best one."""
+    """Auto-discover models from LLM_API_BASE and select/verify the best healthy one."""
     llm = settings.llm
     if not llm.api_base:
         return llm.model
@@ -105,20 +153,20 @@ def auto_discover_and_select_model(settings: Settings) -> str | None:
     if not discovered_ids:
         return llm.model
 
-    # If STRIX_LLM is not set or empty, select the best model automatically
-    if not llm.model:
-        best_id = select_best_model(discovered_ids)
-        if best_id:
-            # All discovered models go through the OpenAI-compatible proxy at
-            # LLM_API_BASE.  The SDK's OpenAI Chat Completions client strips the
-            # "openai/" prefix and sends the remainder as the `model` field, so
-            # "openai/gh/gpt-4o-..." sends model="gh/gpt-4o-..." to the proxy,
-            # which is exactly what it advertised.
-            formatted_model = best_id if best_id.startswith("openai/") else f"openai/{best_id}"
-            llm.model = formatted_model
-            os.environ["STRIX_LLM"] = formatted_model
-            logger.info("Auto-selected model '%s' from 9router (%s)", formatted_model, llm.api_base)
-            print(f"\n✨ [9router] Auto-discovered {len(discovered_ids)} models. Selected: {formatted_model}\n")
-            return formatted_model
+    # If current llm.model is set, test its health. If it's quota-exhausted (429/timeout), trigger auto-fallback!
+    if llm.model:
+        if check_model_health(llm.api_base, llm.api_key, llm.model):
+            return llm.model
+        logger.warning("Configured model '%s' is quota-exhausted or hanging. Initiating auto-fallback...", llm.model)
+        print(f"\n⚠️ [9router] Model '{llm.model}' is out of quota or hanging. Auto-switching to healthy candidate...\n")
+
+    best_id = select_best_model(discovered_ids, api_base=llm.api_base, api_key=llm.api_key)
+    if best_id:
+        formatted_model = best_id if best_id.startswith("openai/") else f"openai/{best_id}"
+        llm.model = formatted_model
+        os.environ["STRIX_LLM"] = formatted_model
+        logger.info("Auto-fallback selected healthy model '%s' from 9router (%s)", formatted_model, llm.api_base)
+        print(f"✨ [9router] Active & healthy model selected: {formatted_model}\n")
+        return formatted_model
 
     return llm.model
