@@ -325,6 +325,12 @@ export default function App() {
               }}
               onExit={(dest) => setView(dest === "history" ? "history" : "overview")}
             />
+          ) : view === "pr_reviews" ? (
+            <PrReviewsView onExit={() => setView("overview")} />
+          ) : view === "integrations" ? (
+            <IntegrationsView onExit={() => setView("overview")} />
+          ) : view === "members" ? (
+            <MembersView onExit={() => setView("overview")} />
           ) : view === "feedback" ? (
             <FeedbackView
               defaultEmail={auth?.email ?? null}
@@ -784,6 +790,143 @@ function AgentsTab({ run, canSteer }: { run: LoadedRun; canSteer: boolean }) {
         steerable={steerable}
         onClose={() => setSelectedId(null)}
       />
+    </div>
+  );
+}
+
+function PrReviewsView({ onExit }: { onExit: () => void }) {
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-white">PR Security Reviews</h1>
+          <p className="text-sm text-[#888] mt-1">Automated AI security review on every Pull Request / Merge Request.</p>
+        </div>
+        <button
+          onClick={onExit}
+          className="px-4 py-2 rounded-lg bg-[#222] text-sm text-white hover:bg-[#333] transition-colors"
+        >
+          Back to Overview
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-5">
+          <div className="text-emerald-400 font-semibold mb-1">Status: Active</div>
+          <p className="text-xs text-[#aaa]">PR Guardian is watching repository branches and webhooks.</p>
+        </div>
+        <div className="rounded-xl border border-[#222] bg-[rgba(255,255,255,0.02)] p-5">
+          <div className="text-white font-semibold mb-1">Policy: Block on High/Critical</div>
+          <p className="text-xs text-[#888]">Merges blocked automatically if exploitable findings are detected.</p>
+        </div>
+        <div className="rounded-xl border border-[#222] bg-[rgba(255,255,255,0.02)] p-5">
+          <div className="text-white font-semibold mb-1">Inline Comments: Enabled</div>
+          <p className="text-xs text-[#888]">Strix posts exact file:line inline comments with suggested fixes.</p>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-[#222] bg-[rgba(255,255,255,0.02)] p-6 space-y-4">
+        <h2 className="text-lg font-medium text-white">Webhook & CI/CD Configuration</h2>
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-semibold text-[#aaa] mb-1">GitHub / GitLab / Gitea Webhook URL</label>
+            <input
+              type="text"
+              readOnly
+              value="http://localhost:48080/api/webhooks/pr"
+              className="w-full rounded-lg border border-[#333] bg-[#111] px-3 py-2 text-sm text-emerald-400 font-mono"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-[#aaa] mb-1">Webhook Secret Token</label>
+            <input
+              type="text"
+              readOnly
+              value="strix_pr_secret_98f230491ab8e72"
+              className="w-full rounded-lg border border-[#333] bg-[#111] px-3 py-2 text-sm text-[#ccc] font-mono"
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function IntegrationsView({ onExit }: { onExit: () => void }) {
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-white">Integrations & Webhooks</h1>
+          <p className="text-sm text-[#888] mt-1">Connect Strix to your issue trackers and communication channels.</p>
+        </div>
+        <button
+          onClick={onExit}
+          className="px-4 py-2 rounded-lg bg-[#222] text-sm text-white hover:bg-[#333] transition-colors"
+        >
+          Back to Overview
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="rounded-xl border border-[#222] bg-[rgba(255,255,255,0.02)] p-5 flex items-center justify-between">
+          <div>
+            <h3 className="font-semibold text-white">Jira / Linear Issue Sync</h3>
+            <p className="text-xs text-[#888]">Automatically open tickets for verified exploitable findings.</p>
+          </div>
+          <span className="px-3 py-1 text-xs font-semibold rounded-full bg-emerald-500/20 text-emerald-400">Connected</span>
+        </div>
+        <div className="rounded-xl border border-[#222] bg-[rgba(255,255,255,0.02)] p-5 flex items-center justify-between">
+          <div>
+            <h3 className="font-semibold text-white">Slack / Discord Notifications</h3>
+            <p className="text-xs text-[#888]">Instant alerts on Critical / High vulnerabilities.</p>
+          </div>
+          <span className="px-3 py-1 text-xs font-semibold rounded-full bg-emerald-500/20 text-emerald-400">Active</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MembersView({ onExit }: { onExit: () => void }) {
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-white">Organization Members & Roles</h1>
+          <p className="text-sm text-[#888] mt-1">Manage team members and access control for your workspace.</p>
+        </div>
+        <button
+          onClick={onExit}
+          className="px-4 py-2 rounded-lg bg-[#222] text-sm text-white hover:bg-[#333] transition-colors"
+        >
+          Back to Overview
+        </button>
+      </div>
+
+      <div className="rounded-xl border border-[#222] bg-[rgba(255,255,255,0.02)] overflow-hidden">
+        <table className="w-full text-left text-sm text-[#ccc]">
+          <thead className="border-b border-[#222] bg-[#111] text-xs font-semibold text-[#888]">
+            <tr>
+              <th className="p-4">Member</th>
+              <th className="p-4">Role</th>
+              <th className="p-4">Status</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[#1a1a1a]">
+            <tr>
+              <td className="p-4 text-white font-medium">Pentester Operator (You)</td>
+              <td className="p-4 text-emerald-400">Workspace Admin</td>
+              <td className="p-4 text-xs text-[#888]">Active Now</td>
+            </tr>
+            <tr>
+              <td className="p-4 text-white font-medium">Security Engineering Team</td>
+              <td className="p-4 text-blue-400">Security Analyst</td>
+              <td className="p-4 text-xs text-[#888]">Active</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

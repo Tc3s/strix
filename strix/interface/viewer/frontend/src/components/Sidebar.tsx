@@ -273,35 +273,20 @@ export default function Sidebar({
             <NavItem
               icon={<LuGitPullRequestArrow className="h-4 w-4" />}
               label="PR Security Reviews"
-              active={false}
-              onClick={() =>
-                openUpgrade(
-                  "pr_reviews",
-                  "Strix reviews every pull request and flags exploitable changes before they merge."
-                )
-              }
+              active={view === "pr_reviews"}
+              onClick={() => onSelectView("pr_reviews")}
             />
             <NavItem
               icon={<VscExtensions className="h-4 w-4" />}
               label="Integrations"
-              active={false}
-              onClick={() =>
-                openUpgrade(
-                  "integrations",
-                  "Sync findings to Jira, Linear, and Slack so fixes happen where your team already works."
-                )
-              }
+              active={view === "integrations"}
+              onClick={() => onSelectView("integrations")}
             />
             <NavItem
               icon={<Users className="h-4 w-4" />}
               label="Members"
-              active={false}
-              onClick={() =>
-                openUpgrade(
-                  "members",
-                  "Invite your team, set roles, and share findings and run history across your org."
-                )
-              }
+              active={view === "members"}
+              onClick={() => onSelectView("members")}
             />
           </div>
         </nav>
