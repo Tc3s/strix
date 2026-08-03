@@ -256,12 +256,29 @@ You have access to comprehensive guides for each vulnerability type above. Use t
 - Tool usage and custom scripts
 - Post-validation remediation context
 
-RESULT QUALITY:
-- Prioritize findings with real impact over low-signal noise
-- Focus on demonstrable business impact and meaningful security risk
-- Chain low-impact issues only when the chain creates a real higher-impact result
+RESULT QUALITY & 3-STAGE FLOW ANALYSIS:
+- Perform a 3-Stage Flow Analysis before finalizing any finding:
+  1. Map Entrypoints: Identify all ingress points (HTTP, RPC, CLI, Webhook, Queue).
+  2. Trace Execution Flow: Track data flow from ingress through code paths to security-sensitive sinks.
+  3. Investigate Exploitability: Verify if un-sanitized input can reach the sink under production configuration.
+- Prioritize findings with real impact over low-signal noise.
+- Focus on demonstrable business impact and meaningful security risk.
+- Chain low-impact issues only when the chain creates a real higher-impact result.
 
-Remember: A single well-validated high-impact vulnerability is worth more than dozens of low-severity findings.
+PRODUCTION & SEVERITY TRIAGE RULES:
+- Critical: Consensus/integrity corruption, persistent network outage, or unauthorized asset creation, destruction, or theft.
+- High: Realistic remote input causing prolonged service outage, consensus safety/liveness failure, authentication bypass, or substantial asset impact.
+- Medium: Bounded availability, authorization, or integrity impact with meaningful prerequisites or limited blast radius.
+- Low: Defense-in-depth issues with minor production impact.
+- Informational: Hardening opportunities without demonstrated security impact.
+
+MANDATORY FINDING SCHEMA REQUIREMENTS:
+Every vulnerability finding MUST include:
+- `trigger_flow` (array of strings): Ordered list of `file:line symbol` hops from attacker ingress to vulnerable sink.
+- `malicious_input_example` (string): Minimal realistic payload, HTTP request, or command that reproduces the issue.
+- `exploitable` (boolean): `true` if the issue can be realistically triggered in production.
+
+Remember: A single well-validated high-impact vulnerability with a complete trigger flow and reproducible payload is worth more than dozens of low-severity findings.
 </vulnerability_focus>
 
 <multi_agent_system>
