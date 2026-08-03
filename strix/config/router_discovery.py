@@ -59,12 +59,12 @@ def select_best_model(models: list[str]) -> str | None:
     if not models:
         return None
 
-    # Priority rules for model selection (prefer non-throttled ag/ models over free-tier gh/ models)
+    # Priority rules for model selection (prefer active unthrottled ag/ models)
     priority_keywords = [
+        "gemini-pro",
+        "gemini-3",
         "claude-opus",
         "claude-sonnet",
-        "gemini-3",
-        "gemini-pro",
         "gpt-4o",
         "gpt-4.1",
         "gpt-5",

@@ -278,9 +278,9 @@ def _make_handler(state: _ViewerState) -> type[BaseHTTPRequestHandler]:
             elif path == "/api/vulnerabilities":
                 self._send_json(HTTPStatus.OK, read_vulnerabilities(run_dir))
             elif path in {"/api/report/pdf", "/api/report/download"}:
-                from strix.interface.viewer.report_pdf import build_pdf_report
+                from strix.interface.viewer.report_pdf import generate_report_pdf
 
-                pdf_bytes = build_pdf_report(run_dir)
+                pdf_bytes = generate_report_pdf(run_dir)
                 self.send_response(HTTPStatus.OK)
                 self.send_header("Content-Type", "application/pdf")
                 self.send_header("Content-Disposition", f'attachment; filename="strix_report_{run_dir.name}.pdf"')
