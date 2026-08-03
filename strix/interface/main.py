@@ -79,6 +79,9 @@ def validate_environment() -> None:
 
     settings = load_settings()
 
+    from strix.config.router_discovery import auto_discover_and_select_model
+    auto_discover_and_select_model(settings)
+
     if codex.subscription_model(settings.llm.model):
         if not codex.is_authenticated():
             console.print(
@@ -553,6 +556,13 @@ Examples:
     )
 
     parser.add_argument(
+        "-M",
+        "--model",
+        type=str,
+        help="Specify the LLM model to use (e.g., 'gh/gpt-4o', 'gh/gpt-5-mini', 'openai/gpt-4o').",
+    )
+
+    parser.add_argument(
         "--update",
         action="store_true",
         help="Update strix to the latest version and exit. Self-updates the "
@@ -687,6 +697,15 @@ Examples:
 
     args = parser.parse_args()
 
+    if getattr(args, "model", None):
+        model_val = args.model.strip()
+        if "/" in model_val and not any(
+            model_val.startswith(p) for p in ("openai/", "anthropic/", "vertex_ai/", "chatgpt/", "litellm/")
+        ):
+            model_val = f"openai/{model_val}"
+        os.environ["STRIX_LLM"] = model_val
+        load_settings().llm.model = model_val
+
     if args.update:
         sys.exit(0 if self_update() else 1)
 
@@ -724,11 +743,9 @@ Examples:
                 f"or remove --resume to start over with the same targets."
             )
     else:
+        args.user_explicit_target = bool(args.target or args.target_list)
         if not args.target and not args.target_list:
-            parser.error(
-                "the following arguments are required: -t/--target or --target-list "
-                "(or use --resume <run_name> to continue a prior scan)"
-            )
+            args.target = ["./"]
         args.targets_info = []
         targets = list(args.target or [])
         for target_list_path in args.target_list or []:

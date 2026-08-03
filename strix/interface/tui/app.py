@@ -162,6 +162,12 @@ class SplashScreen(Static):  # type: ignore[misc]
         self._panel_static.update(panel)
 
     def _build_panel(self, start_line: Text) -> Panel:
+        status_text = getattr(self.app, "_startup_status", "Starting up")
+        progress_box = (
+            self.app._render_startup_progress_box(status_text)
+            if hasattr(self.app, "_render_startup_progress_box")
+            else Align.center(start_line.copy())
+        )
         rows = [
             Align.center(Text(self.BANNER.strip("\n"), style=self.PRIMARY_GREEN, justify="center")),
             Align.center(Text(" ")),
@@ -169,7 +175,7 @@ class SplashScreen(Static):  # type: ignore[misc]
             Align.center(self._build_version_text()),
             Align.center(self._build_tagline_text()),
             Align.center(Text(" ")),
-            Align.center(start_line.copy()),
+            progress_box,
             Align.center(Text(" ")),
             Align.center(self._build_url_text()),
         ]
@@ -237,7 +243,7 @@ class HelpScreen(ModalScreen):  # type: ignore[misc]
         yield Grid(
             Label("Strix Help", id="help_title"),
             Label(
-                "F1        Help\nCtrl+Q/C  Quit\nESC       Stop Agent\n"
+                "F1        Help\nF2/Ctrl+M Select Model\nCtrl+Q/C  Quit\nESC       Stop Agent\n"
                 "Enter     Send message to agent\nTab       Switch panels\n↑/↓       Navigate tree",
                 id="help_content",
             ),
@@ -246,6 +252,74 @@ class HelpScreen(ModalScreen):  # type: ignore[misc]
 
     def on_key(self, _event: events.Key) -> None:
         self.app.pop_screen()
+
+
+class SelectModelScreen(ModalScreen):  # type: ignore[misc]
+    """Modal dialog allowing users to switch models directly inside the TUI."""
+
+    def __init__(self, current_model: str):
+        super().__init__()
+        self.current_model = current_model
+
+    def compose(self) -> ComposeResult:
+        from strix.config import load_settings
+        from strix.config.router_discovery import fetch_router_models
+
+        settings = load_settings()
+        discovered = fetch_router_models(settings.llm.api_base, settings.llm.api_key)
+        if not discovered:
+            discovered = [
+                "gh/gpt-4o",
+                "gh/gpt-5-mini",
+                "gh/claude-haiku-4.5",
+                "gh/gpt-4.1",
+                "openai/gpt-5.4",
+            ]
+
+        buttons = []
+        for m in discovered:
+            formatted = m if m.startswith("openai/") else f"openai/{m}"
+            is_active = (formatted == self.current_model or m == self.current_model)
+            label_text = f"✓ {m}" if is_active else f"  {m}"
+            btn = Button(
+                label_text,
+                id=f"btn_model_{m.replace('/', '_').replace('.', '_')}",
+                variant="primary" if is_active else "default",
+            )
+            btn.model_value = formatted  # type: ignore[attr-defined]
+            buttons.append(btn)
+
+        yield Grid(
+            Label(f"🤖 Select Model (Current: {self.current_model})", id="model_select_title"),
+            VerticalScroll(*buttons, id="model_select_list"),
+            Button("Close", variant="default", id="cancel_model_select"),
+            id="model_select_dialog",
+        )
+
+    def on_mount(self) -> None:
+        close_btn = self.query_one("#cancel_model_select", Button)
+        close_btn.focus()
+
+    def on_key(self, event: events.Key) -> None:
+        if event.key == "escape":
+            self.app.pop_screen()
+            event.prevent_default()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "cancel_model_select":
+            self.app.pop_screen()
+            return
+
+        selected = getattr(event.button, "model_value", None)
+        if selected:
+            import os
+            from strix.config import load_settings
+
+            os.environ["STRIX_LLM"] = selected
+            load_settings().llm.model = selected
+            self.app.notify(f"Selected model: {selected}", title="Model Changed", severity="information")
+            self.app.pop_screen()
+
 
 
 class StopAgentScreen(ModalScreen):  # type: ignore[misc]
@@ -779,6 +853,8 @@ class StrixTUIApp(App):  # type: ignore[misc]
 
     BINDINGS: ClassVar[list[Binding]] = [
         Binding("f1", "toggle_help", "Help", priority=True),
+        Binding("f2", "select_model", "Select Model", priority=True),
+        Binding("ctrl+m", "select_model", "Select Model", priority=True),
         Binding("ctrl+q", "request_quit", "Quit", priority=True),
         Binding("ctrl+c", "request_quit", "Quit", priority=True),
         Binding("escape", "stop_selected_agent", "Stop Agent", priority=True),
@@ -938,7 +1014,21 @@ class StrixTUIApp(App):  # type: ignore[misc]
             chat_area_container.mount(agent_status_display)
             chat_area_container.mount(chat_input_container)
 
+            self.call_after_refresh(self._sync_live_view_agents)
             self.call_after_refresh(self._focus_chat_input)
+
+    def _sync_live_view_agents(self) -> None:
+        if self.show_splash or not self.is_mounted:
+            return
+        for agent_id, agent_data in list(self.live_view.agents.items()):
+            if agent_id not in self.agent_nodes:
+                self._add_agent_node(agent_data)
+        if not self.selected_agent_id:
+            if self.live_view.agents:
+                self.selected_agent_id = list(self.live_view.agents.keys())[0]
+            else:
+                self.selected_agent_id = "root"
+        self._update_chat_view()
 
     def _focus_chat_input(self) -> None:
         if len(self.screen_stack) > 1 or self.show_splash:
@@ -975,14 +1065,12 @@ class StrixTUIApp(App):  # type: ignore[misc]
     def on_mount(self) -> None:
         self.title = "strix"
 
+        self._start_scan_thread()
+        self.set_interval(0.5, self._update_ui)
         self.set_timer(4.5, self._hide_splash_screen)
 
     def _hide_splash_screen(self) -> None:
         self.show_splash = False
-
-        self._start_scan_thread()
-
-        self.set_interval(0.5, self._update_ui)
 
     def _update_ui(self) -> None:
         if self.show_splash:
@@ -1009,6 +1097,8 @@ class StrixTUIApp(App):  # type: ignore[misc]
             if agent_id not in self._displayed_agents:
                 self._add_agent_node(agent_data)
                 self._displayed_agents.add(agent_id)
+                if self.selected_agent_id is None:
+                    self.selected_agent_id = agent_id
             else:
                 self._update_agent_node(agent_id, agent_data)
 
@@ -1167,13 +1257,77 @@ class StrixTUIApp(App):  # type: ignore[misc]
         except Exception:
             logger.debug("Failed to scroll chat to end", exc_info=True)
 
+    def _get_startup_step_info(self, status_text: str) -> tuple[int, int, str]:
+        text = (status_text or "").lower()
+        if "ready" in text or "complete" in text:
+            return 6, 100, "Strix Agent is ready!"
+        if "model" in text or "response" in text or "connecting" in text or "waiting" in text:
+            return 6, 95, "Connecting to LLM model & waiting for first response..."
+        if "agent" in text or "tool" in text or "building" in text:
+            return 5, 85, "Building Root Agent & binding toolsets..."
+        if "skill" in text or "template" in text or "prompt" in text:
+            return 4, 70, "Loading security skills & prompt templates..."
+        if "proxy" in text or "caido" in text:
+            return 3, 50, "Bootstrapping Caido security proxy..."
+        if "sandbox" in text or "container" in text:
+            return 2, 30, "Starting Docker sandbox container..."
+        return 1, 10, "Initializing environment & configuration..."
+
+    def _render_startup_progress_box(self, status_text: str) -> Group:
+        step_idx, percent, current_label = self._get_startup_step_info(status_text)
+        steps = [
+            "Environment & configuration",
+            "Docker sandbox container",
+            "Caido security proxy",
+            "Security skills & prompt templates",
+            "Root Agent & toolsets",
+            "Connecting to LLM model & first response",
+        ]
+
+        lines: list[Text] = []
+
+        header = Text()
+        header.append("⚡ INITIALIZING STRIX AGENT ENGINE", style="bold #22c55e")
+        lines.append(header)
+        lines.append(Text(""))
+
+        for i, step_name in enumerate(steps, start=1):
+            t = Text()
+            if i < step_idx:
+                t.append("  ✔ ", style="bold #22c55e")
+                t.append(f"{i}. {step_name}", style="#9ca3af")
+                t.append(" [100%]\n", style="dim #22c55e")
+            elif i == step_idx:
+                t.append("  ➔ ", style="bold #38bdf8")
+                t.append(f"{i}. {step_name}", style="bold white")
+                t.append(f" [{percent}%]\n", style="bold #38bdf8")
+            else:
+                t.append("  ○ ", style="dim #4b5563")
+                t.append(f"{i}. {step_name}\n", style="dim #4b5563")
+            lines.append(t)
+
+        lines.append(Text(""))
+
+        width = 32
+        filled = int(width * percent / 100)
+        empty = width - filled
+
+        bar = Text()
+        bar.append("  [", style="dim white")
+        bar.append("█" * filled, style="#22c55e")
+        bar.append("░" * empty, style="#374151")
+        bar.append(f"] {percent}%  ", style="bold #22c55e")
+        bar.append(current_label, style="dim white")
+        lines.append(bar)
+
+        return Group(*lines)
+
     def _get_chat_placeholder_content(
         self, message: str, placeholder_class: str
-    ) -> tuple[Text, str]:
+    ) -> tuple[Any, str]:
         self._displayed_events = [placeholder_class]
-        text = Text()
-        text.append(message)
-        return text, f"chat-placeholder {placeholder_class}"
+        progress_box = self._render_startup_progress_box(self._startup_status)
+        return progress_box, f"chat-placeholder {placeholder_class}"
 
     @staticmethod
     def _merge_renderables(renderables: list[Any]) -> Text:
@@ -1290,18 +1444,21 @@ class StrixTUIApp(App):  # type: ignore[misc]
 
         if status in {"waiting", "budget_paused"}:
             text = Text()
-            keymap = Text()
+            keymap = keymap_styled([("ctrl-q", "quit")])
             if status == "budget_paused":
                 text.append("Budget limit reached", style="yellow")
-                text.append(" \u00b7 ", style="dim")
+                text.append(" · ", style="dim")
                 text.append("Send a message to continue", style="dim")
-                keymap = keymap_styled([("ctrl-q", "quit")])
             else:
                 error_msg = agent_data.get("error_message") or ""
                 if error_msg:
                     text.append(error_msg, style="red")
-                    text.append(" \u00b7 ", style="dim")
-                text.append("Send message to resume", style="dim")
+                    text.append(" · ", style="dim")
+                    text.append("Send message to resume", style="dim")
+                else:
+                    text.append("Ready", style="bold #22c55e")
+                    text.append(" · ", style="dim")
+                    text.append("Type a prompt to start", style="dim")
             return (text, keymap, False)
 
         if status == "running":
@@ -1312,6 +1469,12 @@ class StrixTUIApp(App):  # type: ignore[misc]
                 animated_text.append(" ", style="dim")
                 animated_text.append("stop", style="dim")
                 return (animated_text, keymap_styled([("ctrl-q", "quit")]), True)
+            if getattr(self, "_startup_status", "") == "Ready":
+                text = Text()
+                text.append("Ready", style="bold #22c55e")
+                text.append(" · ", style="dim")
+                text.append("Type a prompt to start", style="dim")
+                return (text, keymap_styled([("ctrl-q", "quit")]), False)
             animated_text = self._get_animated_verb_text(agent_id, "Initializing")
             return (animated_text, keymap_styled([("ctrl-q", "quit")]), True)
 
@@ -1570,7 +1733,10 @@ class StrixTUIApp(App):  # type: ignore[misc]
     def _record_startup_status(self, phase: str) -> None:
         self._startup_status = phase
         self._startup_status_step += 1
-        if not self.show_splash and not self.selected_agent_id:
+        if phase == "Ready":
+            self.show_splash = False
+            self.call_later(self._update_chat_view)
+        elif not self.show_splash and not self.selected_agent_id:
             self.call_later(self._update_chat_view)
 
     def _capture_sdk_event(self, agent_id: str, event: Any) -> None:
@@ -1581,6 +1747,10 @@ class StrixTUIApp(App):  # type: ignore[misc]
 
     def _record_sdk_event(self, agent_id: str, event: Any) -> None:
         self.live_view.ingest_sdk_event(agent_id, event)
+        if self._startup_status != "Ready":
+            self._startup_status = "Ready"
+            self.show_splash = False
+            self.call_later(self._update_chat_view)
 
     def _add_agent_node(self, agent_data: dict[str, Any]) -> None:
         if len(self.screen_stack) > 1 or self.show_splash:
@@ -1757,15 +1927,19 @@ class StrixTUIApp(App):  # type: ignore[misc]
                 node.expand()
 
     def _send_user_message(self, message: str) -> None:
-        if not self.selected_agent_id:
-            return
+        target_agent_id = self.selected_agent_id
+        if not target_agent_id:
+            if self.live_view.agents:
+                target_agent_id = list(self.live_view.agents.keys())[0]
+            else:
+                target_agent_id = "root"
+            self.selected_agent_id = target_agent_id
 
         logger.info(
             "TUI: user message -> %s (len=%d)",
-            self.selected_agent_id,
+            target_agent_id,
             len(message),
         )
-        target_agent_id = self.selected_agent_id
 
         submitted = send_user_message_to_agent(
             coordinator=self.coordinator,
@@ -1813,6 +1987,17 @@ class StrixTUIApp(App):  # type: ignore[misc]
             return
 
         self.push_screen(HelpScreen())
+
+    def action_select_model(self) -> None:
+        if not self.is_mounted:
+            return
+        if isinstance(self.screen, SelectModelScreen):
+            self.pop_screen()
+            return
+        from strix.config import load_settings
+
+        curr = (load_settings().llm.model or "").strip()
+        self.push_screen(SelectModelScreen(curr))
 
     async def action_request_quit(self) -> None:
         if self.show_splash or not self.is_mounted:

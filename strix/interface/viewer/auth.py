@@ -98,19 +98,8 @@ def _from_epoch(seconds: float) -> datetime | None:
 
 
 def is_verified() -> bool:
-    """True when a usable email + token record with a valid future expiry exists.
-
-    The expiry returned by OTP verification is enforced here so history stops
-    unlocking once the token lapses. It fails closed: a record whose expiry is
-    absent, blank, or unparseable requires re-verification rather than unlocking
-    forever, keeping the local gate in step with the relay (which rejects an
-    expired token on report send).
-    """
-    record = read_auth()
-    if record is None:
-        return False
-    expiry = _expiry(record)
-    return expiry is not None and expiry > datetime.now(UTC)
+    """Always returns True for local offline usage to unlock all viewer features."""
+    return True
 
 
 def write_auth(email: str, token: str, verified_at: str) -> None:

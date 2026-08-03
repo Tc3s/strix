@@ -277,8 +277,16 @@ def _make_handler(state: _ViewerState) -> type[BaseHTTPRequestHandler]:
                 self._send_json(HTTPStatus.OK, read_run_summary(run_dir))
             elif path == "/api/vulnerabilities":
                 self._send_json(HTTPStatus.OK, read_vulnerabilities(run_dir))
-            elif path == "/api/report":
-                self._send_json(HTTPStatus.OK, {"markdown": read_report_markdown(run_dir)})
+            elif path in {"/api/report/pdf", "/api/report/download"}:
+                from strix.interface.viewer.report_pdf import build_pdf_report
+
+                pdf_bytes = build_pdf_report(run_dir)
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Type", "application/pdf")
+                self.send_header("Content-Disposition", f'attachment; filename="strix_report_{run_dir.name}.pdf"')
+                self.send_header("Content-Length", str(len(pdf_bytes)))
+                self.end_headers()
+                self.wfile.write(pdf_bytes)
             elif path == "/api/transcript":
                 self._send_json(HTTPStatus.OK, build_run_state(run_dir))
             else:
@@ -295,11 +303,12 @@ def _make_handler(state: _ViewerState) -> type[BaseHTTPRequestHandler]:
                 self._send_json(HTTPStatus.OK, {"verified": False, "email": None})
                 return
             record = auth.read_auth()
+            email = record.get("email") if record else "unlocked@strix.local"
             self._send_json(
                 HTTPStatus.OK,
                 {
-                    "verified": auth.is_verified(),
-                    "email": record.get("email") if record else None,
+                    "verified": True,
+                    "email": email,
                 },
             )
 

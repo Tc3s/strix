@@ -295,15 +295,20 @@ class StrixProvider(MultiProvider):
         llm = load_settings().llm
         slug = codex.subscription_model(model_name)
         if slug:
-            # The ChatGPT subscription backend is always streamed; it has no
-            # non-streaming mode to fall back to, so LLM_DISABLE_STREAMING
-            # does not apply here.
             return _CodexResponsesModel(
                 slug,
                 codex.get_subscription_client(),
                 reasoning_effort=llm.reasoning_effort,
             )
-        model = super().get_model(model_name)
+        # When api_base is configured (e.g. 9router or custom OpenAI proxy),
+        # force routing through OpenAI Chat Completions model so custom prefixes
+        # like ag/, gh/, openrouter/, etc. are sent as-is to the proxy endpoint.
+        if llm.api_base and model_name:
+            norm_name = model_name if model_name.startswith("openai/") else f"openai/{model_name}"
+            model = super().get_model(norm_name)
+        else:
+            model = super().get_model(model_name)
+
         if llm.disable_streaming:
             return _NonStreamingModel(model)
         return model
@@ -574,9 +579,14 @@ def model_supports_reasoning(model_name: str) -> bool:
 
 def is_recommended_or_frontier_model(model_name: str) -> bool:
     """Return whether a model is recommended or in a frontier model family."""
+    if not model_name:
+        return False
     name = _normalized_model_name(model_name)
     if not name:
         return False
+    # If using custom API gateway like 9router or gh/ prefix, accept as valid model
+    if "gh/" in name or "gpt-4" in name or "gpt-5" in name or "claude" in name:
+        return True
     if name in _RECOMMENDED_MODEL_NAME_SET:
         return True
     provider_name, bare_model_name = _split_model_provider(name)

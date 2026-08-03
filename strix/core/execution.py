@@ -226,6 +226,19 @@ async def run_agent_loop(
     if not interactive:
         return result
 
+    if start_parked and interactive:
+        await coordinator.park_waiting(agent_id, wait_kind="user")
+
+    # Signal to the TUI that the agent is ready to accept user input.
+    # When start_parked is True the first LLM cycle is skipped entirely,
+    # so without this the TUI would stay at "95% Connecting..." forever.
+    status_sink = context.get("_status_sink")
+    if status_sink is not None:
+        try:
+            status_sink("Ready")
+        except Exception:
+            pass
+
     while True:
         timeout = await _plain_waiting_timeout(coordinator, agent_id)
         try:
@@ -269,13 +282,13 @@ async def run_agent_loop(
                 interrupt=False,
             )
 
-        await coordinator.consume_pending(agent_id)
+        _, drained_items = await coordinator.consume_pending(agent_id, include_items=True)
         with contextlib.suppress(BudgetPausedError):
             result = await _run_until_lifecycle(
                 agent,
                 coordinator,
                 agent_id,
-                initial_input=[],
+                initial_input=drained_items if drained_items else [],
                 run_config=run_config,
                 context=context,
                 max_turns=max_turns,
@@ -500,6 +513,14 @@ async def _run_until_lifecycle(
         if status != "running":
             await coordinator.reset_recovery(agent_id)
             return result
+
+        # If new messages (e.g. user prompt) arrived in mailbox during or right after cycle,
+        # drain mailbox and process the new message immediately instead of entering tool recovery.
+        pending, drained_items = await coordinator.consume_pending(agent_id, include_items=True)
+        if pending > 0:
+            await coordinator.reset_recovery(agent_id)
+            input_data = drained_items if drained_items else []
+            continue
 
         recoveries = await coordinator.record_recovery(agent_id)
         logger.warning(

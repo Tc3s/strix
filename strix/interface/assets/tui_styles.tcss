@@ -695,3 +695,39 @@ HelpScreen {
     background: transparent;
     text-style: none;
 }
+
+SelectModelScreen {
+    align: center middle;
+    background: $background 0%;
+}
+
+#model_select_dialog {
+    grid-size: 1;
+    grid-gutter: 1;
+    grid-rows: auto 1fr auto;
+    padding: 1 2;
+    width: 60;
+    height: 75%;
+    border: round #22c55e;
+    background: #000000 98%;
+}
+
+#model_select_title {
+    color: #22c55e;
+    text-style: bold;
+    text-align: center;
+    width: 100%;
+    margin-bottom: 1;
+}
+
+#model_select_list {
+    height: 1fr;
+    width: 100%;
+}
+
+#model_select_list Button {
+    width: 100%;
+    margin-bottom: 1;
+    text-align: left;
+}
+

@@ -187,7 +187,11 @@ def _prompt_cache_extra_args(model_name: str) -> dict[str, Any] | None:
     Bedrock models get no points at all: Bedrock rejects the passed-through
     field outright.
     """
+    from strix.config import load_settings
+
     if not is_claude_model(model_name):
+        return None
+    if load_settings().llm.api_base:
         return None
     if is_bedrock_route(model_name) and not bedrock_route_supports_prompt_caching(model_name):
         return None

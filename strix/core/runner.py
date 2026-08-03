@@ -278,6 +278,7 @@ async def run_strix_scan(
         if interactive:
             coordinator.set_budget_extender(hooks.extend_budget)
 
+        report("Loading security skills & prompt templates")
         scope_context = build_scope_context(scan_config)
         root_context = _merge_root_prompt_context(scope_context, extra_system_prompt_context)
         root_instructions = _compose_root_instructions_override(
@@ -289,6 +290,7 @@ async def run_strix_scan(
             system_prompt_context=root_context,
         )
 
+        report("Building Root Agent & binding toolsets")
         root_agent = build_strix_agent(
             name="Strix",
             skills=skills,
@@ -341,6 +343,7 @@ async def run_strix_scan(
             "interactive": interactive,
             "spawn_child_agent": spawn_child_agent,
             "max_context_images": settings.runtime.max_context_images,
+            "_status_sink": status_sink,
         }
 
         root_session = open_agent_session(root_id, agents_db)
@@ -385,9 +388,7 @@ async def run_strix_scan(
                 len(resume_instruction),
             )
 
-        async with coordinator._lock:
-            root_status = coordinator.statuses.get(root_id)
-
+        report("Connecting to LLM model & waiting for first response")
         result = await run_agent_loop(
             agent=root_agent,
             initial_input=initial_input,
@@ -398,7 +399,10 @@ async def run_strix_scan(
             agent_id=root_id,
             interactive=interactive,
             session=root_session,
-            start_parked=bool(interactive and is_resume and root_status != "running"),
+            start_parked=bool(
+                interactive
+                and (is_resume or not str(scan_config.get("user_instructions") or "").strip())
+            ),
             event_sink=event_sink,
             hooks=hooks,
         )

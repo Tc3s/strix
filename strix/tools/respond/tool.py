@@ -84,7 +84,7 @@ async def respond_to_user(ctx: RunContextWrapper, message: str) -> str:
     # talking: take it now instead of parking for one they have sent.
     pending, _ = await coordinator.consume_pending(me)
     if pending > 0:
-        await coordinator.mark_running(me)
+        await coordinator.set_status(me, "running")
         return json.dumps(
             {
                 "success": True,
