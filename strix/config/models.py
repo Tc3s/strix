@@ -281,6 +281,9 @@ class StrixProvider(MultiProvider):
         prefix: str,
         stripped_model_name: str | None,
     ) -> tuple[ModelProvider, str | None]:
+        llm = load_settings().llm
+        if llm.api_base:
+            return self._get_fallback_provider("openai"), original_model_name
         if prefix in {"openai", "litellm", "any-llm"}:
             return super()._resolve_prefixed_model(
                 original_model_name=original_model_name,
