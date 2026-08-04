@@ -82,14 +82,13 @@ def check_model_health(
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return resp.status == 200
     except urllib.error.HTTPError as e:
-        if e.code in (429, 403, 503):
-            logger.warning(
-                "Model '%s' failed health check (HTTP %d - Quota Exhausted/Throttled)",
-                model_id,
-                e.code,
-            )
-            return False
-        return True
+        logger.warning(
+            "Model '%s' failed health check (HTTP %d - %s)",
+            model_id,
+            e.code,
+            e.reason,
+        )
+        return False
     except Exception as exc:
         logger.warning("Model '%s' health check timeout/error: %s", model_id, exc)
         return False
