@@ -312,12 +312,31 @@ class SelectModelScreen(ModalScreen):  # type: ignore[misc]
 
         selected = getattr(event.button, "model_value", None)
         if selected:
+            import json
             import os
+            from pathlib import Path
             from strix.config import load_settings
 
             os.environ["STRIX_LLM"] = selected
             load_settings().llm.model = selected
-            self.app.notify(f"Selected model: {selected}", title="Model Changed", severity="information")
+
+            # Persist selection to ~/.strix/cli-config.json
+            config_path = Path.home() / ".strix" / "cli-config.json"
+            try:
+                config_data = {}
+                if config_path.exists():
+                    try:
+                        config_data = json.loads(config_path.read_text("utf-8"))
+                    except Exception:
+                        pass
+                env_section = config_data.setdefault("env", {})
+                env_section["STRIX_LLM"] = selected
+                config_path.parent.mkdir(parents=True, exist_ok=True)
+                config_path.write_text(json.dumps(config_data, indent=2), encoding="utf-8")
+            except Exception as exc:
+                logger.warning("Failed to persist selected model to cli-config.json: %s", exc)
+
+            self.app.notify(f"Selected model: {selected}", title="Model Changed & Saved", severity="information")
             self.app.pop_screen()
 
 

@@ -315,17 +315,17 @@ class StrixProvider(MultiProvider):
 
 
 DEFAULT_MODEL_RETRY = ModelRetrySettings(
-    max_retries=5,
+    max_retries=1,
     backoff=ModelRetryBackoffSettings(
-        initial_delay=2.0,
-        max_delay=90.0,
-        multiplier=2.0,
+        initial_delay=0.5,
+        max_delay=2.0,
+        multiplier=1.5,
         jitter=False,
     ),
     policy=retry_policies.any(
         retry_policies.provider_suggested(),
         retry_policies.network_error(),
-        retry_policies.http_status((429, 500, 502, 503, 504)),
+        retry_policies.http_status((500, 502, 503, 504)),
         _retry_statusless_provider_errors,
     ),
 )

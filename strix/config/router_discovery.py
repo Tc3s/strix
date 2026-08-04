@@ -105,9 +105,9 @@ def select_best_model(
     # Priority rules for model selection (prefer active unthrottled models)
     priority_keywords = [
         "gemini-pro",
-        "gpt-4.1",
-        "gpt-4o",
         "gemini-3",
+        "gpt-4o",
+        "gpt-4.1",
         "claude-opus",
         "claude-sonnet",
         "gpt-5",
@@ -137,8 +137,14 @@ def select_best_model(
     if api_base:
         for candidate in candidates:
             if check_model_health(api_base, api_key, candidate):
+                logger.info("Health check PASSED for model '%s'", candidate)
                 return candidate
-        logger.warning("All candidate models failed health check, using first candidate as fallback.")
+        # If priority candidates failed, check remaining models in discovered list
+        for m in models:
+            if m not in candidates and check_model_health(api_base, api_key, m):
+                logger.info("Fallback health check PASSED for model '%s'", m)
+                return m
+        logger.warning("All candidate models failed health check, returning first candidate as fallback.")
 
     return candidates[0] if candidates else models[0]
 
